@@ -1,51 +1,58 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-
-name: Deploy Laravel to Azure
+# .github/workflows/azure.yml
+name: Deploy Laravel to Azure Web App
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup PHP
-      uses: shivammathur/setup-php@v2
-      with:
-        php-version: '8.2'
-        extensions: mbstring, bcmath, gd, openssl, pdo, pdo_mysql
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, bcmath, intl, sqlite3, redis, zip, exif, pcntl
+          tools: composer
 
-    - name: Install Composer Dependencies
-      run: composer install --no-dev --optimize-autoloader
+      - name: Composer install (production)
+        run: composer install --optimize-autoloader --no-dev --no-interaction --prefer-dist
 
-    - name: Cache Laravel configuration
-      run: php artisan config:cache
+      - name: Laravel production setup + Azure fixes (NO cache path error)
+        run: |
+          php artisan key:generate --force
+          php artisan storage:link || echo "Storage link already exists"
 
-    - name: Create deployment ZIP (excluye .env)
-      run: zip -r deploy.zip . -x "*.git*" "*.github*" ".env"
+          # Cachear todo para máxima velocidad
+          php artisan config:cache
+          php artisan route:cache
+          php artisan view:cache
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: laravel-build
-        path: deploy.zip
+          # FIX DEFINITIVO para Azure: permisos + carpetas de cache
+          mkdir -p storage/framework/cache/data
+          mkdir -p storage/framework/sessions
+          mkdir -p storage/framework/views
+          mkdir -p storage/logs
+          chmod -R 777 storage bootstrap/cache || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: php-app
+          path: .
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
 
     steps:
-      - name: Download artifact from build job
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: php-app
