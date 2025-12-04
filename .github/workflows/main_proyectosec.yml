@@ -1,4 +1,3 @@
-# .github/workflows/azure.yml
 name: Deploy Laravel to Azure Web App
 
 on:
@@ -21,31 +20,31 @@ jobs:
           extensions: mbstring, bcmath, intl, sqlite3, redis, zip, exif, pcntl
           tools: composer
 
-      - name: Composer install (production)
-        run: composer install --optimize-autoloader --no-dev --no-interaction --prefer-dist
+      - name: Install Composer Dependencies (Production)
+        run: composer install --optimize-autoloader --no-dev --prefer-dist
 
-      - name: Laravel production setup + Azure fixes (NO cache path error)
+      - name: Prepare Laravel Framework Cache Folders
         run: |
-          php artisan key:generate --force
-          php artisan storage:link || echo "Storage link already exists"
-
-          # Cachear todo para máxima velocidad
-          php artisan config:cache
-          php artisan route:cache
-          php artisan view:cache
-
-          # FIX DEFINITIVO para Azure: permisos + carpetas de cache
           mkdir -p storage/framework/cache/data
           mkdir -p storage/framework/sessions
           mkdir -p storage/framework/views
           mkdir -p storage/logs
           chmod -R 777 storage bootstrap/cache || true
 
+      - name: Cache Laravel (no key:generate, no .env)
+        run: |
+          php artisan config:cache || true
+          php artisan route:cache || true
+          php artisan view:cache || true
+
+      - name: Create deployment ZIP (excludes .env)
+        run: zip -r deployment.zip . -x "*.git*" "*.github*" ".env"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: php-app
-          path: .
+          name: laravel-app
+          path: deployment.zip
 
   deploy:
     runs-on: ubuntu-latest
@@ -55,8 +54,8 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: php-app
-      
+          name: laravel-app
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -64,10 +63,9 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_71BC0174D5DD41D49B6EF063786E91CF }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_7E61F77CC98447EA967BE0D7E719AB97 }}
 
-      - name: 'Deploy to Azure Web App'
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
-        id: deploy-to-webapp
         with:
           app-name: 'proyectoSec'
           slot-name: 'Production'
-          package: .          
+          package: deployment.zip
